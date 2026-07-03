@@ -1,0 +1,19 @@
+# FFI & Data
+pybind11>=2.11.1
+pyarrow>=15.0.0
+pandas>=2.2.0
+
+# ML & Inference
+jax[cpu]
+llama-cpp-python>=0.2.50
+
+# Orchestration & Validation
+pydantic>=2.5.2
+uvloop>=0.19.0
+
+# Governance & Testing
+pytest>=7.4.3
+hypothesis>=6.92.1
+ruff>=0.1.7
+mypy>=1.7.1
+pre-commit>=3.6.0
