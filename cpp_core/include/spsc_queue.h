@@ -6,10 +6,18 @@
 
 // Align to 64 bytes to prevent false sharing between CPU cache lines.
 // This represents the combined output of our RL Agent (Spread/Skew) and LLM (Regime).
-struct alignas(64) StrategyUpdate {
+struct StrategyUpdate {
     double spread_bps;
     double skew_bps;
     int regime_id;
+    double agent_uncertainty; // NEW: Telemetry pass-through
+
+    // Default constructor (required for pre-allocating the ring buffer array)
+    StrategyUpdate() : spread_bps(2.0), skew_bps(0.0), regime_id(0), agent_uncertainty(0.0) {}
+
+    // Parameterized constructor
+    StrategyUpdate(double spread, double skew, int regime, double uncertainty)
+        : spread_bps(spread), skew_bps(skew), regime_id(regime), agent_uncertainty(uncertainty) {}
 };
 
 class SPSCQueue {

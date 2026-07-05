@@ -16,6 +16,7 @@ class AgentUpdate(BaseModel):
     regime_id: int = Field(
         ..., ge=0, le=3, description="0:Normal, 1:Vol, 2:Bear, 3:Bull"
     )
+    agent_uncertainty: float = Field(..., ge=0.0)
 
     @field_validator("spread_bps")
     def clamp_aggressive_spreads(cls, v):
@@ -28,32 +29,15 @@ class AgentUpdate(BaseModel):
 
 # --- The Arbiter ---
 class StrategyArbiter:
-    __slots__ = ("queue", "current_regime", "risk_matrix")
-
     def __init__(self, spsc_queue: cpp_core.SPSCQueue):
         self.queue = spsc_queue
-        self.current_regime = 0  # Default to NORMAL state
+        self.current_regime = 0  # Default: Normal Market
 
-        # Formal Logic Decision Matrix: dict mapping Regime ID -> (Spread_Multiplier, Skew_Clamp)
-        # This resolves conflicts between the RL agent and the LLM.
-        self.risk_matrix = {
-            0: (1.0, 1.0),  # NORMAL: Trust the RL agent fully.
-            1: (
-                3.0,
-                0.0,
-            ),  # VOLATILITY: Triple the spread, neutralize skew to 0.0 to avoid directional risk.
-            2: (
-                1.5,
-                -1.0,
-            ),  # BEAR_SHOCK: Widen spread, force skew to be strictly negative (bid-heavy).
-            3: (
-                1.5,
-                1.0,
-            ),  # BULL_SHOCK: Widen spread, force skew to be strictly positive (ask-heavy).
-        }
+        # Risk Limits
+        self.MAX_EPISTEMIC_UNCERTAINTY = 3.0  # Volatility bps variance threshold
 
-    def update_macro_regime(self, llm_signal: dict):
-        """Asynchronously updates the risk state without triggering an execution push."""
+    def update_macro_regime(self, llm_signal: dict | None = None):
+        """Asynchronously updates the risk state from background LLM macro analysis."""
         if llm_signal and llm_signal.get("confidence", 0.0) >= 0.75:
             new_regime = llm_signal.get("regime_id", 0)
             if self.current_regime != new_regime:
@@ -63,57 +47,80 @@ class StrategyArbiter:
                 self.current_regime = new_regime
 
     def process_signals(
-        self, rl_spread: float, rl_skew: float, llm_signal: dict | None = None
+        self, spread_mu: float, spread_sigma: float, skew_mu: float, skew_sigma: float
     ) -> bool:
         """
-        Weights competing probabilistic signals, enforces structural boundaries,
-        and pushes the final parameters into the C++ Fast Loop memory block.
+        Ingests continuous probabilistic signals from the JAX Deep Ensemble,
+        applies formal risk overrides, and flashes validated states down to the C++ metal.
         """
-        # 1. Evaluate LLM Signal
-        if llm_signal and llm_signal.get("confidence", 0.0) > 0.85:
-            if self.current_regime != llm_signal["regime_id"]:
-                logging.info(
-                    f"Macro Regime Shift Detected: Transacting to {llm_signal['regime_id']}"
-                )
-                self.current_regime = llm_signal["regime_id"]
+        final_spread = spread_mu
+        final_skew = skew_mu
 
-        # 2. Apply Formal Logic Risk Matrix
-        spread_mult, skew_clamp = self.risk_matrix.get(self.current_regime, (1.0, 1.0))
-        adjusted_spread = rl_spread * spread_mult
-
-        # Directional Skew Neutralization
-        if skew_clamp == 0.0:
-            adjusted_skew = 0.0
-        elif skew_clamp < 0.0:
-            adjusted_skew = min(
-                rl_skew, 0.0
-            )  # Truncate any bullish RL skew during a bear shock
-        else:
-            adjusted_skew = max(
-                rl_skew, 0.0
-            )  # Truncate any bearish RL skew during a bull shock
-
-        # 3. Deterministic Data Contract Validation
-        try:
-            validated = AgentUpdate(
-                spread_bps=adjusted_spread,
-                skew_bps=adjusted_skew,
-                regime_id=self.current_regime,
+        # ---------------------------------------------------------------------
+        # CRITICAL SAFETY LAYER 1: Epistemic Uncertainty (OOD Kill-Switch)
+        # ---------------------------------------------------------------------
+        if spread_sigma > self.MAX_EPISTEMIC_UNCERTAINTY:
+            logging.warning(
+                f"[PROBABILISTIC VETO] AI uncertainty spiked (σ = {spread_sigma:.2f} bps). "
+                f"Out-of-Distribution state detected. Activating Kill-Switch."
             )
+            # Force absolute defensive posture
+            final_spread = 15.0  # Max wide spread to guarantee safety
+            final_skew = 0.0  # Completely neutralize inventory bias
+
+            # Form the structural packet and bypass downstream macro multipliers
+            try:
+                packet = AgentUpdate(
+                    spread_bps=final_spread,
+                    skew_bps=final_skew,
+                    regime_id=self.current_regime,
+                    agent_uncertainty=spread_sigma,
+                )
+                update_raw = cpp_core.StrategyUpdate(
+                    packet.spread_bps,
+                    packet.skew_bps,
+                    packet.regime_id,
+                    packet.agent_uncertainty,
+                )
+                return self.queue.push(update_raw)
+            except Exception as e:
+                logging.error(f"Kill-switch structural generation failed: {e}")
+                return False
+
+        # ---------------------------------------------------------------------
+        # LAYER 2: Exogenous Macro-Regime Overrides (Deterministic Logic Matrix)
+        # ---------------------------------------------------------------------
+        if self.current_regime == 1:  # VOLATILITY
+            final_spread = spread_mu * 3.0
+            final_skew = 0.0  # Flatten directional risk
+        elif self.current_regime == 2:  # BEAR_SHOCK
+            final_spread = spread_mu * 1.5
+            if skew_mu > 0.0:
+                final_skew = 0.0  # Forcefully truncate bullish bias during market crash
+
+        # ---------------------------------------------------------------------
+        # LAYER 3: Boundary Guardrail Serialization & Push
+        # ---------------------------------------------------------------------
+        try:
+            # Enforce structural contracts via Pydantic
+            validated_update = AgentUpdate(
+                spread_bps=final_spread,
+                skew_bps=final_skew,
+                regime_id=self.current_regime,
+                agent_uncertainty=spread_sigma,
+            )
+
+            # Serialize directly into the zero-copy C++ queue
+            native_update = cpp_core.StrategyUpdate(
+                validated_update.spread_bps,
+                validated_update.skew_bps,
+                validated_update.regime_id,
+                validated_update.agent_uncertainty,
+            )
+            return self.queue.push(native_update)
+
         except Exception as e:
             logging.error(
                 f"Runtime validation failed. AI Output Malformed: {e}. Dropping update."
             )
             return False
-
-        # 4. Zero-Copy Push to C++
-        cpp_update = cpp_core.StrategyUpdate(
-            validated.spread_bps, validated.skew_bps, validated.regime_id
-        )
-
-        success = self.queue.push(cpp_update)
-        if not success:
-            # SPSC push returns False if the queue is full (Python is producing faster than C++ can consume)
-            logging.debug("SPSC Queue full. Dropping update to prevent blocking.")
-
-        return success
