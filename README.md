@@ -4,6 +4,13 @@ This repository demonstrates a production-grade **Dual-Loop Architecture** desig
 
 It proves that complex Bayesian workflows — specifically Epistemic Uncertainty detection — can be integrated into capital-at-risk systems to create a mathematically self-aware algorithm without compromising deterministic safety or hot-path latency.
 
+## The Alpha in AI Orchestration
+Integrating probabilistic AI into deterministic execution loops drives direct PnL improvements across three distinct dimensions of quantitative market making:
+
+1. **Capital Preservation via Self-Awareness (The Risk Edge)**: Black-swan events and novel market shocks destroy static trading heuristics. By quantifying *epistemic uncertainty* via a GPU-accelerated Deep Ensemble, Handelaar mathematically recognizes when it is operating in an Out-Of-Distribution (OOD) state. It physically intercepts the AI and defaults to a defensive posture, preserving firm capital when standard bots hemorrhage money.
+2. **Mitigating Adverse Selection (The Micro Edge)**: Traditional market makers get run over by toxic, directional flow. By combining RL agents with real-time Order Flow Imbalance (OFI) tracking on the C++ hot path, the system anticipates order book pressure and mathematically skews its quotes *before* the mid-price moves, protecting the spread.
+3. **Regime-Aware Liquidity Provision (The Macro Edge)**: Incorporating a localized LLM macro-classifier allows the system to autonomously transition from aggressive high-frequency quoting during mean-reverting regimes to wide-spread defensive quoting during macroeconomic data releases, acting as a dynamic, firm-wide capital allocator.
+
 ## Performance Benchmarks
 By implementing OS-level thread pinning, the system achieves nanosecond-tier execution latency while continuously calculating 4-dimensional probability distributions, tracking L1 Order Flow Imbalance (OFI), and updating AI parameters via a lock-free memory bridge.
 
