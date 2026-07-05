@@ -82,6 +82,25 @@ While this MVP demonstrates a probabilistic orchestration architecture on local 
 3. **Distributed AI Inference**: Moving the LLM off local Apple Metal and onto a dedicated, colocated GPU cluster, e.g., NVIDIA H100s. The model would be served via Triton Inference Server and TensorRT-LLM, allowing a single macro-regime classifier to broadcast state updates asynchronously to hundreds of independent LOB engines across different trading symbols simultaneously.
 4. **Bootstrapped Probabilistic Training**: Upgrading the Deep Ensemble training pipeline. The K networks must be continuously trained via Bootstrap Aggregating (Bagging) on daily normalized tick data (stored in Apache Parquet/Iceberg on AWS S3). The loss function must minimize Negative Log-Likelihood (NLL) to penalize false confidence in out-of-distribution states.
 
+## Post-Trade Analytics & Risk Telemetry
+
+Handelaar continuously writes ultra-low-latency tick data, Order Flow Imbalance (OFI), AI predictions, and Arbiter overrides to a `telemetry.parquet` file for offline quant research. The following visualizations demonstrate the mathematical effectiveness of the architecture during a simulated market shock.
+
+### 1. Epistemic Kill-Switch: "Self-Awareness" in Action
+This overlay proves the system can detect Out-Of-Distribution (OOD) market states. When the mid-price crashes, the Deep Ensemble's epistemic uncertainty (σ) violently spikes. The exact microsecond it crosses the `3.0` threshold, the Arbiter overrides the AI and forces a defensive `15bps` spread.
+
+![Epistemic Uncertainty Overaly](assets/pta_self_awareness.png)
+
+### 2. Alpha Preservation: Cumulative PnL
+A naive market-making bot quoting a static 2bps spread gets immediately run over by adverse selection during the flash crash. Handelaar recognizes the toxic flow, widens its spreads to protect capital, and safely resumes quoting when volatility normalizes.
+
+![Cumulative PnL](assets/pta_pnl.png)
+
+### 3. Microstructure Lead-Lag: Reacting to Toxic Flow
+By pinning the C++ Fast Loop to a dedicated CPU core, the engine can track Order Flow Imbalance (OFI) in real-time. This chart demonstrates the RL agent utilizing OFI as a leading indicator, intelligently skewing its quotes away from toxic buying/selling pressure before the mid-price actually moves.
+
+![OFI Lead Lag](assets/pta_ofi.png)
+
 ## Build & Execution Instructions
 
 This project requires a UNIX-like environment (macOS/Linux) and a modern C++ compiler (Apple Clang or GCC).
