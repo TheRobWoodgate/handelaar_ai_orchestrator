@@ -127,7 +127,7 @@ Build the highly optimised `pybind11` bridge:
 mkdir build && cd build
 cmake ../cpp_core
 make -j4
-cp cpp_core.so ../
+cp cpp_core*.so ../
 cd ..
 ```
 
