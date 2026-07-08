@@ -31,7 +31,7 @@ __pycache__/
 .ruff_cache/
 
 # ==========================================
-# Data, Models, & Logs
+# /, Models, & Logs
 # ==========================================
 data/*.gguf
 data/*.parquet
